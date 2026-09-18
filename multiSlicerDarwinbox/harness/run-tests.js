@@ -495,6 +495,42 @@ function record(id, name, status, detail) {
   record('TCL', 'No style-tag leak across 25 updates', styleAfter === styleBefore ? 'PASS' : 'FAIL',
     `style tags ${styleBefore} -> ${styleAfter}`);
 
+  // ---------------------------------------------------------------- TCB
+  // A selection that reaches no rows must not blank every other field.
+  // Regression: a date range moved outside the data used to collapse every list to
+  // just "Select All", leaving the user nothing to click to undo it.
+  const blankSpec = {
+    table: 'Employee',
+    columns: [
+      { name: 'Business Unit', section: 1, type: 'text' },
+      { name: 'Location', section: 2, type: 'text' },
+      { name: 'Date of Joining', section: 3, type: 'date' },
+    ],
+    rows: standard.rows.map((r) => [r[0], r[2], r[4]]),
+  };
+  blankSpec.objects = asLists(blankSpec, await page.evaluate((s) => window.Harness.showAllSlicers(s), blankSpec));
+  blankSpec.objects['__column__Employee.Date of Joining'] = { section3: { slicerType: 'dateRange' } };
+  await page.evaluate((s) => window.Harness.mount(s, 1, 360, 900), blankSpec);
+  await page.evaluate(() => window.Harness.clearErrors());
+  await page.evaluate(() => window.Harness.update(0, {}));
+  await page.waitForTimeout(200);
+  const beforeBlank = await page.evaluate(() => window.Harness.visibleLabels('Business Unit'));
+  await page.evaluate(() => {
+    const c = document.querySelector('.dateSlicerContainer');
+    c.setAttribute('startDate', '2035-01-01');
+    c.setAttribute('endDate', '2035-12-31');
+    document.getElementById('visualHost0').dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  });
+  await page.waitForTimeout(300);
+  const afterBlank = await page.evaluate(() => window.Harness.visibleLabels('Business Unit'));
+  st = await page.evaluate(() => window.Harness.state(0));
+  record(
+    'TCB',
+    'A selection reaching no rows does not blank the other fields',
+    afterBlank.length === beforeBlank.length && st.errors.length === 0 ? 'PASS' : 'FAIL',
+    `Business Unit stayed ${afterBlank.length} of ${beforeBlank.length} values with the date range outside the data`
+  );
+
   fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify({ results, pageErrors }, null, 2));
   console.log('\n--- page-level errors captured ---');
   console.log(pageErrors.length ? pageErrors.slice(0, 20).join('\n') : '(none)');

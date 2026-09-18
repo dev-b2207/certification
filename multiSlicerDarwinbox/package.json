@@ -1,6 +1,6 @@
 {
   "name": "multislicer-darwinbox",
-  "version": "2.5.0.0",
+  "version": "2.5.0.1",
   "description": "Darwinbox Multislicer - a multi-section Power BI slicer panel supporting list, dropdown, date, relative date, numeric and time fields.",
   "repository": {
     "type": "git",

@@ -5,7 +5,7 @@
 A **Power BI custom visual** built with `powerbi-visuals-tools` (pbiviz). It renders a multi-section slicer panel supporting list, dropdown, date range, relative date, numeric, and time slicer types.
 
 - **Visual name:** multiSlicerDarwinbox
-- **Version:** 2.5.0.0
+- **Version:** 2.5.0.1
 - **API version:** 5.8.0
 - **Author:** Shannon Pereira (shannon.pereira@datellers.com)
 - **Remote:** Azure DevOps — `https://dev.azure.com/datellers/Datellers/_git/darwinbox-india`
@@ -193,6 +193,22 @@ Key points:
 - **Fix:** `Functions/rowIndex.ts` indexes each column once per update in a single pass and
   memoises against the column array; hierarchy paths are indexed once per depth. Same
   output, 144ms for the same model.
+
+### Every list collapsed to "Select All" (2.5.0.1)
+- **Symptom:** clicking anywhere in the visual made every option in every section vanish,
+  leaving only "Select All" and any already-ticked values. The panel became a dead end -
+  the user could not see the value they needed to untick.
+- **Root cause:** `getSelectedDataFromUI` emits boundary values and a `no-data-sentinel`
+  with `indexes: []` so the Power BI tuple filter has the right shape. `buildSlicerMasks`
+  treated any slicer that emitted *anything* as constraining, so a date, time or numeric
+  slicer whose range reached no rows produced an all-zero mask. Intersecting that against
+  every other field left nothing reachable anywhere.
+- **Fix:** `buildSlicerMasks` now ignores selections carrying no row indexes, and drops any
+  slicer mask that ends up with no rows set. A field that reaches no rows cannot narrow the
+  others. The Power BI filter is unaffected - only the cross-filter masking changed.
+- **Affected file:** `Functions/Filter/crossFilterMath.ts`. Covered by TCB in the harness
+  suite and three unit checks in `crossFilterMath.test.ts`.
+- **Note:** present in every build that had cross-filtering, i.e. both 2.5.0.0 packages.
 
 ## Known issues not yet fixed
 

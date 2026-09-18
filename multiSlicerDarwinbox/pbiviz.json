@@ -4,10 +4,10 @@
     "displayName": "Darwinbox Multislicer",
     "guid": "multiSlicerDarwinbox821D578930EF4108BB76486B5F41070E",
     "visualClassName": "Visual",
-    "version": "2.5.0.0",
+    "version": "2.5.0.1",
     "description": "One panel that replaces a page full of slicers. Group filters into named sections, choose a list, dropdown, date, numeric or time control per field, and let each selection narrow the remaining fields to the values that still have data. Readers add or remove filters themselves without edit rights, and one Apply refreshes the report once instead of after every click.",
-    "supportUrl": "https://TODO-REPLACE-WITH-DARWINBOX-SUPPORT-URL",
-    "gitHubUrl": "https://TODO-REPLACE-WITH-PUBLIC-REPO-URL"
+    "supportUrl": "https://darwinbox.com/contact-us",
+    "gitHubUrl": "https://github.com/dev-b2207/certification"
   },
   "apiVersion": "5.8.0",
   "author": { "name": "Shannon Pereira", "email": "shannon.pereira@datellers.com" },

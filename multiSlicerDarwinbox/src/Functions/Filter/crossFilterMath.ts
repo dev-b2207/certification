@@ -33,21 +33,49 @@ export function intersectMasks(first: Uint8Array, second: Uint8Array): Uint8Arra
   return result;
 }
 
-/** One mask per slicer: the union of the rows its selected values occupy. */
+/**
+ * One mask per slicer: the union of the rows its selected values occupy.
+ *
+ * Two kinds of selection are deliberately excluded, because both describe zero rows and
+ * an all-zero mask would intersect every other field down to nothing - which showed up
+ * as every list collapsing to just "Select All":
+ *
+ *  - Entries carrying no row indexes. The date, time and numeric collectors emit boundary
+ *    values and a "no data" sentinel so the Power BI tuple filter has the right shape.
+ *    Those describe filter bounds, not reachable data, and must not constrain anything.
+ *  - A slicer whose entries all fall outside the row range, leaving nothing set.
+ *
+ * A field that reaches no rows cannot meaningfully narrow the others, and blanking the
+ * whole panel would leave the user no way to see what to undo.
+ */
 export function buildSlicerMasks(selections: IRowSelection[], rowCount: number): Map<string, Uint8Array> {
   const masks = new Map<string, Uint8Array>();
+  const rowsCovered = new Map<string, number>();
 
   selections.forEach((selection) => {
+    if (!selection.indexes || selection.indexes.length === 0) {
+      return;
+    }
+
     let mask = masks.get(selection.key);
     if (!mask) {
       mask = new Uint8Array(rowCount);
       masks.set(selection.key, mask);
+      rowsCovered.set(selection.key, 0);
     }
+
     selection.indexes.forEach((rowIndex) => {
-      if (rowIndex >= 0 && rowIndex < rowCount) {
+      if (rowIndex >= 0 && rowIndex < rowCount && mask[rowIndex] === 0) {
         mask[rowIndex] = 1;
+        rowsCovered.set(selection.key, rowsCovered.get(selection.key) + 1);
       }
     });
+  });
+
+  rowsCovered.forEach((covered, key) => {
+    if (covered === 0) {
+      masks.delete(key);
+    }
   });
 
   return masks;

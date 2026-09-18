@@ -7,7 +7,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 SRC = '/root/.claude/uploads/8101b043-7e5d-57db-b3a5-f19271da6217/81030852-Test_cases_PowerBI_Custom_Visual.xlsx'
-OUT = '/home/claude/work/appsource/Test-results-multiSlicerDarwinbox-2.5.0.0.xlsx'
+OUT = '/home/claude/work/appsource/Test-results-multiSlicerDarwinbox-2.5.0.1.xlsx'
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 
 # Result, Evidence keyed by the leading words of each Microsoft test case.
@@ -24,7 +24,7 @@ RESULTS = {
         'Pass',
         'TC3. Ticked Business Unit = Sales and pressed Apply. Tuple filter target was exactly [Business Unit]; a '
         'downstream consumer saw 30 of 120 rows, matching the 30 Sales rows. NOTE: this case failed before this release '
-        'and is fixed in 2.5.0.0 - see the Defects sheet.'),
+        'and is fixed in 2.5.0.1 - see the Defects sheet.'),
     'Select elements in other visuals.': (
         'Pass',
         'TC4. Host supplied a dataView narrowed to Engineering. The visual rendered only Engineering values and did not '
@@ -132,7 +132,7 @@ RESULTS = {
     'Test data entries with different types of data': (
         'Pass',
         'TC30a/b/c. One row, two rows and 30,000 rows (the declared data reduction ceiling). 30,000 rows across six '
-        'fields render in 144ms and a cross-filter recompute takes 214ms. NOTE: this was 5,124ms before this release - '
+        'fields render in ~150ms and a cross-filter recompute takes 214ms. NOTE: this was 5,124ms before this release - '
         'see the Defects sheet.'),
     'Provide bad data to your visual': (
         'Pass',
@@ -142,9 +142,23 @@ RESULTS = {
 }
 
 DEFECTS = [
+    ('Every list collapsed to "Select All" when a selection reached no rows',
+     'Critical - unusable panel',
+     'Fixed in 2.5.0.1',
+     'Clicking anywhere in the visual made every option in every section disappear, leaving only '
+     '"Select All" and any already-ticked values, so the user could not even see the value they '
+     'needed to untick. The date, time and numeric collectors emit boundary values and a "no data" '
+     'sentinel carrying no row indexes, so the Power BI tuple filter has the right shape. The '
+     'cross-filter treated any slicer that emitted anything as constraining, so a slicer whose range '
+     'reached no rows produced an all-zero mask that intersected every other field down to nothing. '
+     'Present in both 2.5.0.0 packages.',
+     'Mask building now ignores selections carrying no row indexes, and drops any slicer mask that '
+     'ends up with no rows set - a field that reaches no rows cannot narrow the others. The applied '
+     'Power BI filter is unchanged; only the cross-filter masking was touched. Covered by test case '
+     'TCB in the harness suite and three unit checks.'),
     ('Untouched numeric or time field silently filtered the report',
      'Critical - wrong data',
-     'Fixed in 2.5.0.0',
+     'Fixed in 2.5.0.1',
      'A numeric field defaults to the condition "Is less than" seeded with the data maximum, and a time field defaults '
      'to "Is". Both joined the applied tuple filter even when the user never touched them. Numeric silently dropped '
      'every row holding the maximum value; time dropped every row. Reproduced at 2 of 3 expected rows (numeric) and '
@@ -155,7 +169,7 @@ DEFECTS = [
      'returns every field to untouched.'),
     ('Main thread froze for ~5 seconds on large models',
      'High - performance',
-     'Fixed in 2.5.0.0',
+     'Fixed in 2.5.0.1',
      'Row indexes were built by scanning the whole column once per distinct value and accumulating with array spread, '
      'so cost grew with rows x distinct values. A 30,000-row model with a high-cardinality field (date of joining, '
      'employee code) took 5,124ms per render. Microsoft submission testing requires no application freezing.',
@@ -164,14 +178,14 @@ DEFECTS = [
      'improvement, with identical output.'),
     ('Fields did not narrow each other',
      'High - usability',
-     'Fixed in 2.5.0.0',
+     'Fixed in 2.5.0.1',
      'Power BI never applies a visual\'s own filter back to that visual, so every field always received the full row '
      'set and no selection constrained any other field. Users could pick combinations that returned an empty report.',
      'Cross-filtering computed inside the visual over row-index bitmasks. Controlled by Filtering > Filter other '
      'fields, default on.'),
     ('Style tag and document listener leaked on every update',
      'Medium - performance',
-     'Fixed in 2.5.0.0',
+     'Fixed in 2.5.0.1',
      'applyInjectedCSS() appended a new <style> element to document.head on every update(), and the outside-click '
      'handler added a new document listener on every update() without removing the previous one. Both grew without '
      'bound for the life of the session.',
@@ -179,7 +193,7 @@ DEFECTS = [
      'a new destroy(). Verified: 25 consecutive updates add zero style tags.'),
     ('Errors were swallowed, leaving stale content and a broken format pane',
      'Medium - robustness',
-     'Fixed in 2.5.0.0',
+     'Fixed in 2.5.0.1',
      'update() wrapped everything in try/catch and logged to console. A missing dataView or a field removed mid-session '
      'threw, was swallowed, left the previous render on screen, and then made getFormattingModel() throw a null '
      'reference when the pane was opened.',
@@ -201,7 +215,7 @@ NOTES = [
     ('Dashboard pinning', 'Requires the Power BI service and cannot be exercised offline. A pinned tile is a static '
                           'image produced by a normal update() pass, which is covered by the rendering tests.'),
     ('How these results were produced',
-     'The packaged 2.5.0.0 .pbiviz was loaded into a headless Chromium harness against a Power BI host simulator that '
+     'The packaged 2.5.0.1 .pbiviz was loaded into a headless Chromium harness against a Power BI host simulator that '
      'models the categorical dataView, persistProperties, applyJsonFilter and the host-driven update that follows a '
      'filter. Every console error, page error and unhandled rejection was captured; the full run produced none. The '
      'harness is included in the source zip under harness/ so the run can be repeated.'),
