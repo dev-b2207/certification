@@ -1,0 +1,237 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Multislicer harness</title>
+<link rel="stylesheet" href="visual.css">
+<style>
+  html, body { margin: 0; padding: 0; font-family: "Segoe UI", Arial, sans-serif; background: #F3F2F1; }
+  #stage { position: relative; }
+  #visualHost { position: absolute; background: #fff; overflow: hidden; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="visualHost"></div></div>
+
+<script src="pbi-host.js"></script>
+<script src="visual.js"></script>
+<script>
+/* eslint-disable */
+window.__errors = [];
+window.addEventListener('error', (e) => window.__errors.push('window.onerror: ' + (e.message || e)));
+window.addEventListener('unhandledrejection', (e) => window.__errors.push('unhandledrejection: ' + e.reason));
+['error', 'warn'].forEach((level) => {
+  const original = console[level];
+  console[level] = function () {
+    window.__errors.push(level + ': ' + Array.prototype.map.call(arguments, String).join(' '));
+    return original.apply(console, arguments);
+  };
+});
+
+const PLUGIN_ID = 'multiSlicerDarwinbox821D578930EF4108BB76486B5F41070E';
+
+window.Harness = {
+  instances: [],
+
+  /** Mount N copies of the visual, as "multiple versions on one page" requires. */
+  mount(spec, count, width, height) {
+    count = count || 1;
+    width = width || 320;
+    height = height || 620;
+    // page.evaluate serialises Dates to ISO strings; date and time columns have to be
+    // handed back to the visual as real Date objects or the fidelity of the test is lost.
+    const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+    spec.columns.forEach((c, ci) => {
+      if (c.type === 'date' || c.type === 'time') {
+        spec.rows.forEach((r) => {
+          if (typeof r[ci] === 'string' && ISO.test(r[ci])) r[ci] = new Date(r[ci]);
+        });
+      }
+    });
+    this.teardown();
+    const stage = document.getElementById('stage');
+    stage.innerHTML = '';
+
+    for (let i = 0; i < count; i++) {
+      const element = document.createElement('div');
+      element.id = 'visualHost' + i;
+      element.style.cssText =
+        'position:absolute;background:#fff;overflow:hidden;left:' + (i * (width + 16)) + 'px;top:0;width:' + width + 'px;height:' + height + 'px;';
+      stage.appendChild(element);
+
+      const sim = new window.PbiHostSimulator(spec);
+      const host = sim.createHost();
+      const visual = window.powerbi.visuals.plugins[PLUGIN_ID].create({ element: element, host: host });
+      const inst = { sim: sim, visual: visual, element: element, width: width, height: height };
+      // Power BI re-runs the query and calls update() again after a visual applies a
+      // filter. Modelling that is what makes selection-restore testing meaningful.
+      const index = this.instances.length;
+      sim.onFilterApplied = () => {
+        setTimeout(() => {
+          try {
+            window.Harness.update(index, {});
+          } catch (e) {
+            window.__errors.push('host re-update: ' + e);
+          }
+        }, 0);
+      };
+      this.instances.push(inst);
+    }
+    return this.instances.length;
+  },
+
+  update(index, opts) {
+    opts = opts || {};
+    const inst = this.instances[index || 0];
+    const options = {
+      type: opts.type === undefined ? 62 : opts.type,
+      viewport: { width: opts.width || inst.width, height: opts.height || inst.height },
+      dataViews: opts.emptyDataView ? [] : [inst.sim.buildDataView()],
+      jsonFilters: inst.sim.jsonFilter ? [inst.sim.jsonFilter] : [],
+      viewMode: opts.viewMode === undefined ? 1 : opts.viewMode,
+      editMode: opts.editMode === undefined ? 0 : opts.editMode,
+      operationKind: 0,
+    };
+    if (opts.width) {
+      inst.element.style.width = opts.width + 'px';
+      inst.width = opts.width;
+    }
+    if (opts.height) {
+      inst.element.style.height = opts.height + 'px';
+      inst.height = opts.height;
+    }
+    inst.visual.update(options);
+    return true;
+  },
+
+  /** Power BI calls getFormattingModel after update; exercising it catches null refs. */
+  formattingModel(index) {
+    const inst = this.instances[index || 0];
+    const model = inst.visual.getFormattingModel();
+    return {
+      cardCount: model.cards.length,
+      cardNames: model.cards.map((c) => c.displayName),
+      sliceCount: model.cards.reduce((n, c) => n + c.groups.reduce((m, g) => m + g.slices.length, 0), 0),
+    };
+  },
+
+  state(index) {
+    const inst = this.instances[index || 0];
+    return {
+      errors: window.__errors.slice(),
+      renderEvents: inst.sim.renderEvents.slice(),
+      persistCount: inst.sim.persistCount,
+      contextMenuCount: inst.sim.contextMenuCount,
+      jsonFilter: inst.sim.jsonFilter ? JSON.parse(JSON.stringify(inst.sim.jsonFilter)) : null,
+      downstreamRows: inst.sim.downstreamRowCount(),
+      totalRows: inst.sim.spec.rows.length,
+      objects: JSON.parse(JSON.stringify(inst.sim.objects)),
+    };
+  },
+
+  /** Labels currently visible in a named slicer, honouring every hiding mechanism. */
+  visibleLabels(slicerName, index) {
+    const inst = this.instances[index || 0];
+    const container = Array.prototype.find.call(
+      inst.element.querySelectorAll('.slicerContainer'),
+      (el) => el.getAttribute('slicerLabel') === slicerName
+    );
+    if (!container) return null;
+    return Array.prototype.filter
+      .call(container.querySelectorAll('.checkboxDiv'), (el) => el.offsetParent !== null)
+      .map((el) => el.getAttribute('label'));
+  },
+
+  allLabels(slicerName, index) {
+    const inst = this.instances[index || 0];
+    const container = Array.prototype.find.call(
+      inst.element.querySelectorAll('.slicerContainer'),
+      (el) => el.getAttribute('slicerLabel') === slicerName
+    );
+    if (!container) return null;
+    return Array.prototype.map.call(container.querySelectorAll('.checkboxDiv'), (el) => el.getAttribute('label'));
+  },
+
+  slicerNames(index) {
+    const inst = this.instances[index || 0];
+    return Array.prototype.map.call(inst.element.querySelectorAll('.slicerContainer'), (el) => el.getAttribute('slicerLabel'));
+  },
+
+  /** Tick a value by its rendered label. */
+  tick(slicerName, label, index) {
+    const inst = this.instances[index || 0];
+    const container = Array.prototype.find.call(
+      inst.element.querySelectorAll('.slicerContainer'),
+      (el) => el.getAttribute('slicerLabel') === slicerName
+    );
+    if (!container) return 'no-slicer';
+    const row = Array.prototype.find.call(container.querySelectorAll('.checkboxDiv'), (el) => el.getAttribute('label') === label);
+    if (!row) return 'no-row';
+    const input = row.querySelector('input.checkbox');
+    input.checked = !input.checked;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return input.checked;
+  },
+
+  openDropdown(slicerName, index) {
+    const inst = this.instances[index || 0];
+    const container = Array.prototype.find.call(
+      inst.element.querySelectorAll('.slicerContainer'),
+      (el) => el.getAttribute('slicerLabel') === slicerName
+    );
+    if (!container) return false;
+    const input = container.querySelector('.dropdown-input');
+    if (!input) return false;
+    input.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return true;
+  },
+
+  click(selector, index) {
+    const inst = this.instances[index || 0];
+    const el = inst.element.querySelector(selector);
+    if (!el) return false;
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return true;
+  },
+
+  /** Enable every field, the way "+ Add Filter" > Save does. */
+  showAllSlicers(spec) {
+    const visibility = spec.columns.map((c) => ({
+      sectionIndex: c.section,
+      label: c.name,
+      query: c.hierarchyGroup ? 'Employee.' + c.hierarchyGroup + '.' + c.name : 'Employee.' + c.name,
+    }));
+    // A hierarchy is represented by its first field only.
+    const seen = {};
+    const filtered = visibility.filter((v, i) => {
+      const group = spec.columns[i].hierarchyGroup;
+      if (!group) return true;
+      if (seen[group]) return false;
+      seen[group] = true;
+      return true;
+    });
+    return { saveState: { slicerVisibility: JSON.stringify(filtered) } };
+  },
+
+  setViewport(index, w, h) {
+    const inst = this.instances[index || 0];
+    inst.element.style.width = w + 'px';
+    inst.element.style.height = h + 'px';
+    inst.width = w;
+    inst.height = h;
+  },
+
+  clearErrors() {
+    window.__errors = [];
+  },
+
+  teardown() {
+    this.instances.forEach((inst) => {
+      if (inst.visual && typeof inst.visual.destroy === 'function') inst.visual.destroy();
+    });
+    this.instances = [];
+  },
+};
+</script>
+</body>
+</html>
